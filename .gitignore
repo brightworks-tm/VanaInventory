@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+
+# 参照用・資料フォルダ（参考用のため管理対象外）
+参照用・資料フォルダ/
+
+# 内部開発用（公開不要）
+DEVELOPMENT_RULES.md
+*.code-workspace
+main.py
+README.back.md
+
+# IDE/Editor
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Data (Personal / Temporary)
+data/names.ini
+data/*.json
+data/*.dat
+
+# Export Output
+output/

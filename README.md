@@ -48,9 +48,6 @@ python ui_inventory.py
 - 上段: Inventory / Safe / Safe2 / Storage / Locker / Satchel / Sack / Case
 - 下段: Wardrobe 1〜8
 
-### アイテム検索
-画面右上の検索ボックスにアイテム名またはIDを入力すると、リアルタイムで絞り込まれます。
-
 ### 「せいとん」ソート
 「せいとん」ボタンをクリックすると、FFXI準拠の順序（クリスタル→薬品→武器→防具→素材…）で並べ替えます。
 

@@ -17,10 +17,6 @@
     - 📖 BG-Wiki
     - 📚 FF11用語辞典 (Google検索)
 
-### Changed
-- 未使用の `LiveInventoryWindow` クラスを削除しコードをシンプル化
-- `--ffxi` コマンドライン引数を削除
-
 ---
 
 ## [0.8.0] - 2025-12-22

@@ -291,6 +291,48 @@ class LiveDataLoader:
         age = (datetime.now() - self.last_load_time).total_seconds()
         return age < max_age_seconds
 
+    def search_all_characters(self, query: str) -> List[Dict[str, Any]]:
+        """全キャラクターからアイテムを検索
+        
+        Args:
+            query: 検索クエリ（アイテム名、大文字小文字無視、部分一致）
+            
+        Returns:
+            検索結果のリスト: [{'character': str, 'storage': str, 'item': LiveItem, 'count': int}, ...]
+            キャラクター×保管場所×アイテムID単位で集計済み
+        """
+        if not query:
+            return []
+            
+        query_lower = query.lower()
+        characters = self.get_available_characters()
+        
+        # キャラクター×保管場所×アイテムIDで集計
+        aggregated = {}
+        
+        for char_name in characters:
+            data = self.load_character_data(char_name)
+            if not data:
+                continue
+            
+            # 通常アイテム検索
+            items = self.get_all_items()
+            for item in items:
+                if (query_lower in item.name.lower() or 
+                    query_lower in item.name_en.lower()):
+                    key = (char_name, item.storage, item.id)
+                    if key in aggregated:
+                        aggregated[key]['count'] += item.count
+                    else:
+                        aggregated[key] = {
+                            'character': char_name,
+                            'storage': item.storage,
+                            'item': item,
+                            'count': item.count
+                        }
+                
+        return list(aggregated.values())
+
 
 def main():
     """テスト用"""

@@ -1,5 +1,4 @@
 import sys
-import argparse
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from PyQt6.QtWidgets import (
@@ -28,6 +27,7 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QFrame,
     QScrollArea,
+    QMenu,
 )
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont, QColor
@@ -623,194 +623,96 @@ class InventoryListPanel(QFrame):
             item = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
             self.parent_window.detail_panel.set_item(item)
 
-
-class LiveInventoryWindow(QMainWindow):
-    """ライブデータ専用インベントリビューア (FFXI Style)"""
-
-    def __init__(self):
+class FindAllWindow(QMainWindow):
+    """全キャラクター横断検索ウィンドウ"""
+    
+    def __init__(self, loader: LiveDataLoader):
         super().__init__()
-        self.setWindowTitle("VanaInventory Live (FFXI Style)")
-        self.resize(1280, 800)
-
-        self.loader = LiveDataLoader()
-        self.current_char: Optional[str] = None
-        self.all_items: List[LiveItem] = []
-
+        self.loader = loader
+        self.setWindowTitle("Search All - 全キャラクター検索")
+        self.resize(800, 600)
         self.setup_ui()
-        self.check_data_path()
-
+        
     def setup_ui(self):
-        self.setStyleSheet(FFXI_STYLE)
-
         central = QWidget()
-        central.setObjectName("MainContent")
         self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
-
-        toolbar = QHBoxLayout()
-        toolbar.addWidget(QLabel("Character:"))
-        self.char_combo = QComboBox()
-        self.char_combo.setMinimumWidth(150)
-        self.char_combo.currentTextChanged.connect(self.on_character_changed)
-        toolbar.addWidget(self.char_combo)
-
-        self.reload_btn = QPushButton("Refresh")
-        self.reload_btn.clicked.connect(self.reload_data)
-        toolbar.addWidget(self.reload_btn)
-
-        toolbar.addStretch()
-
-        self.gearset_btn = QPushButton("GearSet Builder")
-        self.gearset_btn.clicked.connect(self.open_gearset_builder)
-        toolbar.addWidget(self.gearset_btn)
-
-        main_layout.addLayout(toolbar)
-
-        content_splitter = QSplitter(Qt.Orientation.Vertical)
-
-        top_widget = QWidget()
-        top_layout = QHBoxLayout(top_widget)
-        top_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.status_panel = StatusPanel()
-        top_layout.addWidget(self.status_panel)
-
-        self.grid_panel = EquipmentGridPanel()
-        top_layout.addWidget(self.grid_panel, 1)
-
-        self.list_panel = InventoryListPanel(self)
-        top_layout.addWidget(self.list_panel)
-
-        content_splitter.addWidget(top_widget)
-
-        self.detail_panel = ItemDetailPanel()
-        content_splitter.addWidget(self.detail_panel)
-
-        content_splitter.setSizes([600, 200])
-        main_layout.addWidget(content_splitter)
-
-        self.statusbar = QStatusBar()
-        self.setStatusBar(self.statusbar)
-
-    def check_data_path(self):
-        if self.loader.data_path and self.loader.data_path.exists():
-            self.refresh_characters()
+        layout = QVBoxLayout(central)
+        
+        # 検索バー
+        search_layout = QHBoxLayout()
+        self.search_edit = QLineEdit()
+        self.search_edit.setPlaceholderText("アイテム名を入力...")
+        self.search_edit.returnPressed.connect(self.on_search)
+        search_layout.addWidget(self.search_edit)
+        
+        search_btn = QPushButton("検索")
+        search_btn.clicked.connect(self.on_search)
+        search_btn.setFixedWidth(80)
+        search_layout.addWidget(search_btn)
+        
+        layout.addLayout(search_layout)
+        
+        # 結果テーブル
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["キャラクター", "保管場所", "アイテム名", "個数"])
+        
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        
+        # アイテム名の列幅を固定
+        self.table.setColumnWidth(2, 300)
+        
+        self.table.verticalHeader().setVisible(False)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        
+        layout.addWidget(self.table)
+        
+        # ステータス
+        self.status_label = QLabel("検索語を入力してください")
+        layout.addWidget(self.status_label)
+        
+    def on_search(self):
+        query = self.search_edit.text().strip()
+        if not query:
             return
+            
+        self.status_label.setText("検索中...")
+        QApplication.processEvents()
+        
+        results = self.loader.search_all_characters(query)
+        
+        self.table.setRowCount(0)
+        self.table.setRowCount(len(results))
+        
+        total_count = 0
+        for i, res in enumerate(results):
+            char_item = QTableWidgetItem(res['character'])
+            self.table.setItem(i, 0, char_item)
+            
+            # 保管場所
+            storage_item = QTableWidgetItem(res.get('storage', ''))
+            self.table.setItem(i, 1, storage_item)
+            
+            # アイテム名（日本語 / 英語）
+            item_obj = res['item']
+            name_str = f"{item_obj.name} / {item_obj.name_en}"
+            name_item = QTableWidgetItem(name_str)
+            self.table.setItem(i, 2, name_item)
+            
+            count = res['count']
+            total_count += count
+            count_item = QTableWidgetItem(str(count))
+            count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.table.setItem(i, 3, count_item)
+            
+        self.status_label.setText(f"'{query}' で {len(results)} 件、合計 {total_count} 個")
 
-        default_paths = [
-            Path("C:/tool/windower/addons/VanaExport/data"),
-            Path("D:/windower/addons/VanaExport/data"),
-            Path("E:/windower/addons/VanaExport/data"),
-            Path("C:/Program Files (x86)/Windower4/addons/VanaExport/data"),
-        ]
-        for path in default_paths:
-            if path.exists():
-                self.loader.set_data_path(str(path))
-                self.refresh_characters()
-                return
 
-        self.set_data_path(show_message=False)
-
-    def set_data_path(self, show_message: bool = False):
-        current_path = str(self.loader.data_path) if self.loader.data_path else ""
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            "VanaExportデータフォルダを選択",
-            current_path if current_path else str(Path.home()),
-        )
-        if not folder:
-            self.statusbar.showMessage("Data path not found. Please set VanaExport data path.")
-            return
-
-        self.loader.set_data_path(folder)
-        self.refresh_characters()
-        if show_message:
-            QMessageBox.information(self, "データパス設定", f"データパスを設定しました:\n{folder}")
-
-    def refresh_characters(self):
-        self.char_combo.clear()
-        chars = self.loader.get_available_characters()
-        if chars:
-            self.char_combo.addItems(chars)
-
-    def on_character_changed(self, char_name: str):
-        if not char_name:
-            return
-
-        self.current_char = char_name
-        data = self.loader.load_character_data(char_name)
-
-        if data:
-            player = self.loader.get_player_info()
-            self.status_panel.update_info(player)
-
-            equipment = self.loader.get_current_equipment()
-            self.grid_panel.update_equipment(equipment)
-
-            self.all_items = self.loader.get_all_items()
-            self.apply_filters()
-
-            self.statusbar.showMessage(f"Loaded {char_name}")
-
-    def apply_filters(self):
-        search_text = self.list_panel.search_edit.text().lower()
-        category_filter = self.list_panel.category_combo.currentText()
-
-        filtered_items = []
-        for item in self.all_items:
-            name = (item.name_en or item.name).lower()
-            if search_text and search_text not in name:
-                continue
-            if category_filter != "All" and item.category != category_filter:
-                continue
-            filtered_items.append(item)
-
-        filtered_items.sort(key=lambda x: get_seiton_priority(x.id, x.category, x.item_type, x.skill, x.slots))
-
-        table = self.list_panel.table
-        table.setRowCount(0)
-        table.setRowCount(len(filtered_items))
-
-        for i, item in enumerate(filtered_items):
-            name_item = QTableWidgetItem(item.name_en or item.name)
-            name_item.setData(Qt.ItemDataRole.UserRole, item)
-            table.setItem(i, 0, name_item)
-
-            loc_item = QTableWidgetItem(item.storage)
-            if item.storage == "Equipped":
-                loc_item.setForeground(QColor("#00ff00"))
-            elif "Wardrobe" in item.storage:
-                loc_item.setForeground(QColor("#aaaaff"))
-            table.setItem(i, 1, loc_item)
-
-        self.list_panel.count_label.setText(f"{len(filtered_items)} items")
-
-    def reload_data(self):
-        self.refresh_characters()
-        if self.current_char:
-            self.on_character_changed(self.current_char)
-
-    def open_gearset_builder(self):
-        if not self.current_char:
-            return
-
-        if getattr(self, "gearset_window", None) is not None and self.gearset_window.isVisible():
-            self.gearset_window.showNormal()
-            self.gearset_window.raise_()
-            self.gearset_window.activateWindow()
-            return
-
-        items = self.loader.get_equipment_items()
-        items.sort(key=lambda x: get_seiton_priority(x.id, x.category, x.item_type, x.skill, x.slots))
-
-        self.gearset_window = GearSetBuilderWindow(items, parser=None, live_loader=self.loader)
-        self.gearset_window.setWindowTitle(f"GearSet Builder - {self.current_char}")
-
-        equipment = self.loader.get_current_equipment()
-        for slot_name, item in equipment.items():
-            self.gearset_window.gearset_panel.set_equipment(slot_name, item)
-
-        self.gearset_window.show()
 
 
 class InventoryWindow(QMainWindow):
@@ -933,10 +835,10 @@ class InventoryWindow(QMainWindow):
         self.reload_button.clicked.connect(self.reload_data)
         header_layout.addWidget(self.reload_button)
         
-        header_layout.addWidget(QLabel("Search:"))
+        header_layout.addWidget(QLabel("Search All:"))
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Item name or ID...")
-        self.search_box.textChanged.connect(self.on_search_changed)
+        self.search_box.setPlaceholderText("全キャラ検索...")
+        self.search_box.returnPressed.connect(self.on_search_all)
         header_layout.addWidget(self.search_box)
         
         right_layout.addLayout(header_layout)
@@ -1422,6 +1324,12 @@ class InventoryWindow(QMainWindow):
         table.setColumnWidth(1, 200)  # Item Name column width
         
         table.setSortingEnabled(True)
+        
+        # 右クリックメニューを有効化
+        table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table.customContextMenuRequested.connect(
+            lambda pos, t=table: self.show_item_context_menu(t, pos)
+        )
 
         layout.addWidget(table)
         
@@ -1519,13 +1427,88 @@ class InventoryWindow(QMainWindow):
         
         self.gearset_window.show()
 
-if __name__ == "__main__":
-    argp = argparse.ArgumentParser()
-    argp.add_argument("--ffxi", action="store_true", help="FFXI風UIで起動")
-    args = argp.parse_args()
+    def open_findall(self, initial_query: str = ""):
+        """全キャラクター検索ウィンドウを開く"""
+        # すでに開いている場合は再利用して前面に出す
+        if getattr(self, "findall_window", None) is not None and self.findall_window.isVisible():
+            self.findall_window.showNormal()
+            self.findall_window.raise_()
+            self.findall_window.activateWindow()
+            if initial_query:
+                self.findall_window.search_edit.setText(initial_query)
+                self.findall_window.on_search()
+            return
+        
+        self.findall_window = FindAllWindow(self.loader)
+        if initial_query:
+            self.findall_window.search_edit.setText(initial_query)
+            self.findall_window.on_search()
+        self.findall_window.show()
 
+    def on_search_all(self):
+        """Search Allが実行されたときにFindAllウィンドウを開く"""
+        query = self.search_box.text().strip()
+        if query:
+            self.open_findall(query)
+
+    def show_item_context_menu(self, table: QTableWidget, pos):
+        """アイテムの右クリックメニューを表示"""
+        item = table.itemAt(pos)
+        if not item:
+            return
+            
+        row = item.row()
+        name_item = table.item(row, 1)  # Item Name column
+        if not name_item:
+            return
+            
+        item_name = name_item.text()
+        item_id = name_item.data(Qt.ItemDataRole.UserRole)
+        
+        menu = QMenu(self)
+        
+        # Search All
+        search_action = menu.addAction("🔍 Search All")
+        search_action.triggered.connect(lambda: self.open_findall(item_name))
+        
+        menu.addSeparator()
+        
+        # Copy item name
+        copy_action = menu.addAction("📋 アイテム名をコピー")
+        copy_action.triggered.connect(
+            lambda: QApplication.clipboard().setText(item_name)
+        )
+        
+        # Copy item ID
+        if item_id:
+            copy_id_action = menu.addAction(f"📋 IDをコピー ({item_id})")
+            copy_id_action.triggered.connect(
+                lambda: QApplication.clipboard().setText(str(item_id))
+            )
+        
+        menu.addSeparator()
+        
+        # Open in FFXIAH
+        if item_id:
+            ffxiah_action = menu.addAction("🌐 FFXIAH")
+            ffxiah_action.triggered.connect(
+                lambda: __import__('webbrowser').open(f"https://www.ffxiah.com/item/{item_id}")
+            )
+            
+            bgwiki_action = menu.addAction("📖 BG-Wiki")
+            bgwiki_action.triggered.connect(
+                lambda: __import__('webbrowser').open(f"https://www.bg-wiki.com/ffxi/{item_name.replace(' ', '_')}")
+            )
+            
+            ffo_action = menu.addAction("📚 FF11用語辞典 (Google検索)")
+            ffo_action.triggered.connect(
+                lambda: __import__('webbrowser').open(f"https://www.google.com/search?q=site:wiki.ffo.jp+{__import__('urllib.parse').parse.quote(item_name)}")
+            )
+        
+        menu.exec(table.viewport().mapToGlobal(pos))
+
+if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = LiveInventoryWindow() if args.ffxi else InventoryWindow()
+    window = InventoryWindow()
     window.show()
     sys.exit(app.exec())
-

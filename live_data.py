@@ -293,32 +293,33 @@ class LiveDataLoader:
 
     def search_all_characters(self, query: str) -> List[Dict[str, Any]]:
         """全キャラクターからアイテムを検索
-        
+
         Args:
             query: 検索クエリ（アイテム名、大文字小文字無視、部分一致）
-            
+
         Returns:
             検索結果のリスト: [{'character': str, 'storage': str, 'item': LiveItem, 'count': int}, ...]
             キャラクター×保管場所×アイテムID単位で集計済み
+            誰も所持していない場合は、アイテム情報と個数0を返す
         """
         if not query:
             return []
-            
+
         query_lower = query.lower()
         characters = self.get_available_characters()
-        
+
         # キャラクター×保管場所×アイテムIDで集計
         aggregated = {}
-        
+
         for char_name in characters:
             data = self.load_character_data(char_name)
             if not data:
                 continue
-            
+
             # 通常アイテム検索
             items = self.get_all_items()
             for item in items:
-                if (query_lower in item.name.lower() or 
+                if (query_lower in item.name.lower() or
                     query_lower in item.name_en.lower()):
                     key = (char_name, item.storage, item.id)
                     if key in aggregated:
@@ -330,8 +331,43 @@ class LiveDataLoader:
                             'item': item,
                             'count': item.count
                         }
-                
-        return list(aggregated.values())
+
+        results = list(aggregated.values())
+
+        # キャラクター名 → 保管場所 → 個数（降順）でソート
+        results.sort(key=lambda x: (x['character'], x['storage'], -x['count']))
+
+        return results
+
+    def search_item_in_db(self, query: str) -> Optional[Dict[str, Any]]:
+        """アイテムDBから名前で検索（誰も所持していない場合の表示用）
+
+        Args:
+            query: 検索クエリ（アイテム名、部分一致）
+
+        Returns:
+            見つかった場合は {'id': int, 'name': str, 'name_en': str}、見つからない場合はNone
+        """
+        if not query or not self.db_path or not self.db_path.exists():
+            return None
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            # 日本語名または英語名で部分一致検索
+            cursor.execute(
+                "SELECT id, name_ja, name_en FROM items WHERE name_ja LIKE ? OR name_en LIKE ? LIMIT 1",
+                (f"%{query}%", f"%{query}%")
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                return {'id': row[0], 'name': row[1], 'name_en': row[2]}
+            return None
+        except Exception as e:
+            print(f"DB検索エラー: {e}")
+            return None
 
 
 def main():

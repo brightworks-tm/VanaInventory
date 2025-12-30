@@ -625,92 +625,190 @@ class InventoryListPanel(QFrame):
 
 class FindAllWindow(QMainWindow):
     """全キャラクター横断検索ウィンドウ"""
-    
+
     def __init__(self, loader: LiveDataLoader):
         super().__init__()
         self.loader = loader
         self.setWindowTitle("Search All - 全キャラクター検索")
         self.resize(800, 600)
         self.setup_ui()
-        
+
     def setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
-        
+
         # 検索バー
         search_layout = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("アイテム名を入力...")
         self.search_edit.returnPressed.connect(self.on_search)
         search_layout.addWidget(self.search_edit)
-        
+
         search_btn = QPushButton("検索")
         search_btn.clicked.connect(self.on_search)
         search_btn.setFixedWidth(80)
         search_layout.addWidget(search_btn)
-        
+
         layout.addLayout(search_layout)
-        
+
         # 結果テーブル
         self.table = QTableWidget()
         self.table.setColumnCount(4)
         self.table.setHorizontalHeaderLabels(["キャラクター", "保管場所", "アイテム名", "個数"])
-        
+
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Interactive)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        
+
         # アイテム名の列幅を固定
         self.table.setColumnWidth(2, 300)
-        
+
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        
+
+        # 右クリックメニューを有効化
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
+
         layout.addWidget(self.table)
-        
+
         # ステータス
         self.status_label = QLabel("検索語を入力してください")
         layout.addWidget(self.status_label)
-        
+
     def on_search(self):
         query = self.search_edit.text().strip()
         if not query:
             return
-            
+
         self.status_label.setText("検索中...")
         QApplication.processEvents()
-        
+
         results = self.loader.search_all_characters(query)
-        
+
         self.table.setRowCount(0)
-        self.table.setRowCount(len(results))
-        
-        total_count = 0
-        for i, res in enumerate(results):
-            char_item = QTableWidgetItem(res['character'])
-            self.table.setItem(i, 0, char_item)
-            
-            # 保管場所
-            storage_item = QTableWidgetItem(res.get('storage', ''))
-            self.table.setItem(i, 1, storage_item)
-            
-            # アイテム名（日本語 / 英語）
-            item_obj = res['item']
-            name_str = f"{item_obj.name} / {item_obj.name_en}"
-            name_item = QTableWidgetItem(name_str)
-            self.table.setItem(i, 2, name_item)
-            
-            count = res['count']
-            total_count += count
-            count_item = QTableWidgetItem(str(count))
-            count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.table.setItem(i, 3, count_item)
-            
-        self.status_label.setText(f"'{query}' で {len(results)} 件、合計 {total_count} 個")
+
+        if results:
+            # 所持しているキャラクターがいる場合
+            self.table.setRowCount(len(results))
+
+            total_count = 0
+            for i, res in enumerate(results):
+                char_item = QTableWidgetItem(res['character'])
+                self.table.setItem(i, 0, char_item)
+
+                # 保管場所
+                storage_item = QTableWidgetItem(res.get('storage', ''))
+                self.table.setItem(i, 1, storage_item)
+
+                # アイテム名（日本語 / 英語）
+                item_obj = res['item']
+                name_str = f"{item_obj.name} / {item_obj.name_en}"
+                name_item = QTableWidgetItem(name_str)
+                # アイテムIDをUserRoleに保存
+                name_item.setData(Qt.ItemDataRole.UserRole, item_obj.id)
+                self.table.setItem(i, 2, name_item)
+
+                count = res['count']
+                total_count += count
+                count_item = QTableWidgetItem(str(count))
+                count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(i, 3, count_item)
+
+            chars_with_item = len(set(r['character'] for r in results))
+            self.status_label.setText(
+                f"'{query}' - {chars_with_item} キャラクターが所持、合計 {total_count} 個"
+            )
+        else:
+            # 誰も所持していない場合、DBからアイテム情報を検索して表示
+            db_item = self.loader.search_item_in_db(query)
+            if db_item:
+                self.table.setRowCount(1)
+
+                # キャラクター欄は「-」
+                char_item = QTableWidgetItem("-")
+                self.table.setItem(0, 0, char_item)
+
+                # 保管場所も「-」
+                storage_item = QTableWidgetItem("-")
+                self.table.setItem(0, 1, storage_item)
+
+                # アイテム名（日本語 / 英語）
+                name_str = f"{db_item['name']} / {db_item['name_en']}"
+                name_item = QTableWidgetItem(name_str)
+                name_item.setData(Qt.ItemDataRole.UserRole, db_item['id'])
+                self.table.setItem(0, 2, name_item)
+
+                # 個数は0
+                count_item = QTableWidgetItem("0")
+                count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.table.setItem(0, 3, count_item)
+
+                self.status_label.setText(f"'{query}' - 誰も所持していません")
+            else:
+                self.status_label.setText(f"'{query}' - アイテムが見つかりません")
+
+    def show_context_menu(self, pos):
+        """右クリックメニューを表示"""
+        item = self.table.itemAt(pos)
+        if not item:
+            return
+
+        row = item.row()
+        name_item = self.table.item(row, 2)  # アイテム名列
+        if not name_item:
+            return
+
+        # アイテム名（日本語名部分を抽出）
+        full_name = name_item.text()
+        item_name = full_name.split(" / ")[0] if " / " in full_name else full_name
+        item_id = name_item.data(Qt.ItemDataRole.UserRole)
+
+        menu = QMenu(self)
+
+        # Copy item name
+        copy_action = menu.addAction("📋 アイテム名をコピー")
+        copy_action.triggered.connect(
+            lambda: QApplication.clipboard().setText(item_name)
+        )
+
+        # Copy item ID
+        if item_id:
+            copy_id_action = menu.addAction(f"📋 IDをコピー ({item_id})")
+            copy_id_action.triggered.connect(
+                lambda: QApplication.clipboard().setText(str(item_id))
+            )
+
+        menu.addSeparator()
+
+        # Open in FFXIAH
+        if item_id:
+            ffxiah_action = menu.addAction("🌐 FFXIAH")
+            ffxiah_action.triggered.connect(
+                lambda: __import__('webbrowser').open(f"https://www.ffxiah.com/item/{item_id}")
+            )
+
+            bgwiki_action = menu.addAction("📖 BG-Wiki")
+            # 英語名を使用
+            en_name = full_name.split(" / ")[1] if " / " in full_name else item_name
+            bgwiki_action.triggered.connect(
+                lambda: __import__('webbrowser').open(
+                    f"https://www.bg-wiki.com/ffxi/{en_name.replace(' ', '_')}"
+                )
+            )
+
+            ffo_action = menu.addAction("📚 FF11用語辞典 (Google検索)")
+            ffo_action.triggered.connect(
+                lambda: __import__('webbrowser').open(
+                    f"https://www.google.com/search?q=site:wiki.ffo.jp+{__import__('urllib.parse').parse.quote(item_name)}"
+                )
+            )
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
 
 
 

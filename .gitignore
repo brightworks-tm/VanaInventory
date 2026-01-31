@@ -12,15 +12,22 @@ README.back.md
 
 # IDE/Editor
 .vscode/
+.claude/
 
 # OS
 Thumbs.db
 .DS_Store
+nul
 
 # Data (Personal / Temporary)
 data/names.ini
 data/*.json
 data/*.dat
 
+# Tools (Large generated files)
+tools/items.lua
+tools/__pycache__/
+
 # Export Output
 output/
+

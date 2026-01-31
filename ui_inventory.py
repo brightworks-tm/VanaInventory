@@ -414,7 +414,8 @@ class EquipmentSlotWidget(QFrame):
 
     def set_item(self, item: Optional[LiveItem]):
         if item:
-            self.item_label.setText(item.name_en or item.name)
+            # 日本語名を優先表示（CLAUDE.md 開発ルール準拠）
+            self.item_label.setText(item.name or item.name_en)
         else:
             self.item_label.setText("")
 
@@ -532,7 +533,8 @@ class ItemDetailPanel(QFrame):
             self.desc_label.setText("")
             return
 
-        name = item.name_en or item.name
+        # 日本語名を優先表示（CLAUDE.md 開発ルール準拠）
+        name = item.name or item.name_en
         self.name_label.setText(name)
 
         meta_parts = [f"ID: {item.id}", item.category]
